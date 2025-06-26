@@ -24,7 +24,7 @@ import { DoctorModule } from './doctor/doctor.module';
         rejectUnauthorized: false, // ✅ Required for Render
       },
       entities: [Doctor, Patient, Appointment, TimeSlot, User, DoctorAvailability],
-      synchronize: true,
+      synchronize: false,
       migrations: ['dist/migrations/*.js'],
       migrationsRun: true,
       autoLoadEntities: true,
