@@ -1,0 +1,396 @@
+From 57d097bee9ed5d9a2110fc4c73f40969961ccd4f Mon Sep 17 00:00:00 2001
+From: Manasvi Gupta <manasvi.gupta1684@gmail.com>
+Date: Tue, 1 Jul 2025 00:20:18 +0530
+Subject: [PATCH] Implement appointment booking with stream/wave scheduling
+
+---
+ src/app.module.ts                         |  2 +
+ src/appointment/appointment.controller.ts | 25 ++++++
+ src/appointment/appointment.module.ts     | 15 ++++
+ src/appointment/appointment.service.ts    | 99 +++++++++++++++++++++++
+ src/auth/dto/create-appointment.dto.ts    | 32 ++++++++
+ src/auth/dto/update-schedule-type.dto.ts  |  6 ++
+ src/doctor/doctor.controller.ts           | 13 +++
+ src/doctor/doctor.service.ts              | 15 ++++
+ src/entities/doctor.entity.ts             | 11 ++-
+ src/entities/timeslot.entity.ts           |  6 +-
+ src/migrations/1751307735439-init.ts      | 23 ++++++
+ 11 files changed, 244 insertions(+), 3 deletions(-)
+ create mode 100644 src/appointment/appointment.controller.ts
+ create mode 100644 src/appointment/appointment.module.ts
+ create mode 100644 src/appointment/appointment.service.ts
+ create mode 100644 src/auth/dto/create-appointment.dto.ts
+ create mode 100644 src/auth/dto/update-schedule-type.dto.ts
+ create mode 100644 src/migrations/1751307735439-init.ts
+
+diff --git a/src/app.module.ts b/src/app.module.ts
+index 1136024..1188d7b 100644
+--- a/src/app.module.ts
++++ b/src/app.module.ts
+@@ -11,6 +11,7 @@ import { DoctorAvailability } from './entities/doctor_availability.entity';
+ 
+ import { AuthModule } from './auth/auth.module';
+ import { DoctorModule } from './doctor/doctor.module';
++import { AppointmentModule } from './appointment/appointment.module';
+ 
+ @Module({
+   imports: [
+@@ -31,6 +32,7 @@ import { DoctorModule } from './doctor/doctor.module';
+     }),
+     AuthModule,
+     DoctorModule,
++    AppointmentModule,
+   ],
+ })
+ export class AppModule {}
+diff --git a/src/appointment/appointment.controller.ts b/src/appointment/appointment.controller.ts
+new file mode 100644
+index 0000000..79f583a
+--- /dev/null
++++ b/src/appointment/appointment.controller.ts
+@@ -0,0 +1,25 @@
++import {
++  Controller,
++  Post,
++  Body,
++  Req,
++  UseGuards,
++} from '@nestjs/common';
++import { AppointmentService } from './appointment.service';
++import { CreateAppointmentDto } from 'src/auth/dto/create-appointment.dto';
++import { JwtGuard } from 'src/common/guards/jwt.guard';
++import { RolesGuard } from 'src/common/guards/roles.guard';
++import { Roles } from 'src/common/decorators/roles.decorator';
++
++@Controller('api/v1/appointments')
++@UseGuards(JwtGuard, RolesGuard)
++@Roles('patient')
++export class AppointmentController {
++  constructor(private readonly appointmentService: AppointmentService) {}
++
++  @Post()
++  book(@Body() dto: CreateAppointmentDto, @Req() req: any) {
++    const patientId = req.user.sub;
++    return this.appointmentService.bookAppointment(patientId, dto);
++  }
++}
+diff --git a/src/appointment/appointment.module.ts b/src/appointment/appointment.module.ts
+new file mode 100644
+index 0000000..91701a0
+--- /dev/null
++++ b/src/appointment/appointment.module.ts
+@@ -0,0 +1,15 @@
++import { Module } from '@nestjs/common';
++import { TypeOrmModule } from '@nestjs/typeorm';
++import { Appointment } from 'src/entities/appointment.entity';
++import { Doctor } from 'src/entities/doctor.entity';
++import { TimeSlot } from 'src/entities/timeslot.entity';
++import { Patient } from 'src/entities/patient.entity';
++import { AppointmentService } from './appointment.service';
++import { AppointmentController } from './appointment.controller';
++
++@Module({
++  imports: [TypeOrmModule.forFeature([Appointment, Doctor, TimeSlot, Patient])],
++  controllers: [AppointmentController],
++  providers: [AppointmentService],
++})
++export class AppointmentModule {}
+diff --git a/src/appointment/appointment.service.ts b/src/appointment/appointment.service.ts
+new file mode 100644
+index 0000000..87f554c
+--- /dev/null
++++ b/src/appointment/appointment.service.ts
+@@ -0,0 +1,99 @@
++import {
++  Injectable,
++  BadRequestException,
++  ConflictException,
++  NotFoundException,
++} from '@nestjs/common';
++import { InjectRepository } from '@nestjs/typeorm';
++import { Repository } from 'typeorm';
++import { Appointment } from 'src/entities/appointment.entity';
++import { Doctor } from 'src/entities/doctor.entity';
++import { TimeSlot } from 'src/entities/timeslot.entity';
++import { CreateAppointmentDto } from 'src/auth/dto/create-appointment.dto';
++import { Patient } from 'src/entities/patient.entity';
++
++@Injectable()
++export class AppointmentService {
++  constructor(
++    @InjectRepository(Appointment)
++    private appointmentRepo: Repository<Appointment>,
++
++    @InjectRepository(Doctor)
++    private doctorRepo: Repository<Doctor>,
++
++    @InjectRepository(TimeSlot)
++    private timeSlotRepo: Repository<TimeSlot>,
++
++    @InjectRepository(Patient)
++    private patientRepo: Repository<Patient>,
++  ) {}
++
++  async bookAppointment(
++    patientId: number,
++    dto: CreateAppointmentDto,
++  ) {
++    const doctor = await this.doctorRepo.findOne({
++      where: { doctor_id: dto.doctor_id },
++    });
++    if (!doctor) throw new NotFoundException('Doctor not found');
++
++    const slot = await this.timeSlotRepo.findOne({
++      where: {
++        doctor: { doctor_id: dto.doctor_id },
++        date: new Date(dto.date),
++        start_time: dto.start_time,
++        end_time: dto.end_time,
++      },
++    });
++    if (!slot) throw new NotFoundException('Time slot not found');
++
++    const patient = await this.patientRepo.findOne({
++      where: { patient_id: patientId },
++    });
++    if (!patient) throw new NotFoundException('Patient not found');
++
++    if (doctor.schedule_type === 'stream') {
++      if (!slot.is_available) throw new ConflictException('Slot already booked');
++
++      const appointment = this.appointmentRepo.create({
++        doctor,
++        patient,
++        appointment_date: dto.date,
++        time_slot: `${dto.start_time} - ${dto.end_time}`,
++        appointment_status: 'booked',
++      });
++
++      await this.appointmentRepo.save(appointment);
++      slot.is_available = false;
++      await this.timeSlotRepo.save(slot);
++
++      return { message: 'Appointment booked (stream)', appointment };
++    }
++
++    // Wave scheduling
++    if (doctor.schedule_type === 'wave') {
++      const waveLimit = doctor.wave_limit ?? 3;
++
++      if (slot.booked_count >= waveLimit)
++        throw new ConflictException('Wave slot is full');
++
++      const appointment = this.appointmentRepo.create({
++        doctor,
++        patient,
++        appointment_date: dto.date,
++        time_slot: `${dto.start_time} - ${dto.end_time}`,
++        appointment_status: 'booked',
++      });
++
++      await this.appointmentRepo.save(appointment);
++      slot.booked_count += 1;
++      if (slot.booked_count >= waveLimit) slot.is_available = false;
++
++      await this.timeSlotRepo.save(slot);
++
++      return { message: 'Appointment booked (wave)', appointment };
++    }
++
++    throw new BadRequestException('Invalid schedule type');
++  }
++}
+diff --git a/src/auth/dto/create-appointment.dto.ts b/src/auth/dto/create-appointment.dto.ts
+new file mode 100644
+index 0000000..f603481
+--- /dev/null
++++ b/src/auth/dto/create-appointment.dto.ts
+@@ -0,0 +1,32 @@
++import {
++  IsNotEmpty,
++  IsString,
++  IsDateString,
++  IsNumber,
++} from 'class-validator';
++
++export class CreateAppointmentDto {
++  @IsNotEmpty()
++  @IsNumber()
++  doctor_id: number;
++
++  @IsNotEmpty()
++  @IsDateString()
++  date: string; // Format: YYYY-MM-DD
++
++  @IsNotEmpty()
++  @IsString()
++  weekday: string;
++
++  @IsNotEmpty()
++  @IsString()
++  session: string; // e.g., 'morning'
++
++  @IsNotEmpty()
++  @IsString()
++  start_time: string; // e.g., '10:00'
++
++  @IsNotEmpty()
++  @IsString()
++  end_time: string; // e.g., '12:00'
++}
+diff --git a/src/auth/dto/update-schedule-type.dto.ts b/src/auth/dto/update-schedule-type.dto.ts
+new file mode 100644
+index 0000000..22ba7d2
+--- /dev/null
++++ b/src/auth/dto/update-schedule-type.dto.ts
+@@ -0,0 +1,6 @@
++import { IsIn } from 'class-validator';
++
++export class UpdateScheduleTypeDto {
++  @IsIn(['stream', 'wave'], { message: 'schedule_type must be either "stream" or "wave"' })
++  schedule_type: 'stream' | 'wave';
++}
+diff --git a/src/doctor/doctor.controller.ts b/src/doctor/doctor.controller.ts
+index 8bcdbfc..1895530 100644
+--- a/src/doctor/doctor.controller.ts
++++ b/src/doctor/doctor.controller.ts
+@@ -9,6 +9,7 @@ import {
+   Req,
+   UseGuards,
+   ParseIntPipe,
++  Patch,
+ } from '@nestjs/common';
+ import { DoctorService } from './doctor.service';
+ import { SetAvailabilityDto } from 'src/auth/dto/SetAvailabilityDto';
+@@ -16,6 +17,7 @@ import { PaginationDto } from 'src/auth/dto/PaginationDto';
+ import { JwtGuard } from 'src/common/guards/jwt.guard';
+ import { RolesGuard } from 'src/common/guards/roles.guard';
+ import { Roles } from 'src/common/decorators/roles.decorator';
++import { UpdateScheduleTypeDto } from 'src/auth/dto/update-schedule-type.dto';
+ 
+ @Controller('api/v1/doctors')
+ export class DoctorController {
+@@ -71,4 +73,15 @@ async setAvailability(
+   ) {
+     return this.doctorService.getDoctorAvailability(doctorId, pagination);
+   }
++
++@Patch(':id/schedule-type')
++@Roles('doctor')
++@UseGuards(JwtGuard, RolesGuard)
++async updateScheduleType(
++  @Param('id', ParseIntPipe) doctorId: number,
++  @Body() dto: UpdateScheduleTypeDto,
++) {
++  return this.doctorService.updateScheduleType(doctorId, dto.schedule_type);
++}
++
+ }
+diff --git a/src/doctor/doctor.service.ts b/src/doctor/doctor.service.ts
+index 95d5fdd..2c322cf 100644
+--- a/src/doctor/doctor.service.ts
++++ b/src/doctor/doctor.service.ts
+@@ -163,5 +163,20 @@ private generateTimeSlots(availability: DoctorAvailability, interval: number): T
+   return slots;
+ }
+ 
++async updateScheduleType(doctorId: number, schedule_type: 'stream' | 'wave') {
++  const doctor = await this.doctorRepository.findOne({ where: { doctor_id: doctorId } });
++
++  if (!doctor) {
++    throw new NotFoundException('Doctor not found');
++  }
++
++  doctor.schedule_type = schedule_type;
++  await this.doctorRepository.save(doctor);
++
++  return { message: `Schedule type updated to ${schedule_type}` };
++}
++
++
++
+ 
+ }
+diff --git a/src/entities/doctor.entity.ts b/src/entities/doctor.entity.ts
+index 964299c..f89dc9c 100644
+--- a/src/entities/doctor.entity.ts
++++ b/src/entities/doctor.entity.ts
+@@ -51,6 +51,14 @@ export class Doctor {
+   @Column({ default: 'doctor' })
+   role: 'doctor';
+ 
++  // 🔸 NEW: Schedule type
++  @Column({ type: 'enum', enum: ['stream', 'wave'], default: 'stream' })
++  schedule_type: 'stream' | 'wave';
++
++  // 🔸 NEW: Wave booking limit
++  @Column({ type: 'int', default: 1 })
++  wave_limit: number;
++
+   @OneToMany(() => TimeSlot, (slot) => slot.doctor)
+   timeSlots: TimeSlot[];
+ 
+@@ -62,6 +70,5 @@ export class Doctor {
+   user: User;
+ 
+   @OneToMany(() => DoctorAvailability, (availability) => availability.doctor)
+-availabilities: DoctorAvailability[];
+-
++  availabilities: DoctorAvailability[];
+ }
+diff --git a/src/entities/timeslot.entity.ts b/src/entities/timeslot.entity.ts
+index 19b3c9b..df28f4f 100644
+--- a/src/entities/timeslot.entity.ts
++++ b/src/entities/timeslot.entity.ts
+@@ -27,7 +27,7 @@ export class TimeSlot {
+   @JoinColumn({ name: 'availability_id' })
+   availability: DoctorAvailability;
+ 
+-  @Column({ type: 'date' }) // ✅ REQUIRED
++  @Column({ type: 'date' })
+   date: Date;
+ 
+   @Column()
+@@ -42,6 +42,10 @@ export class TimeSlot {
+   @Column({ default: true })
+   is_available: boolean;
+ 
++  // 🔸 NEW: Keep track of how many patients booked this slot
++  @Column({ type: 'int', default: 0 })
++  booked_count: number;
++
+   @CreateDateColumn()
+   created_at: Date;
+ 
+diff --git a/src/migrations/1751307735439-init.ts b/src/migrations/1751307735439-init.ts
+new file mode 100644
+index 0000000..7a97d7c
+--- /dev/null
++++ b/src/migrations/1751307735439-init.ts
+@@ -0,0 +1,23 @@
++import { MigrationInterface, QueryRunner } from "typeorm";
++
++export class Init1751307735439 implements MigrationInterface {
++    name = 'Init1751307735439'
++
++    public async up(queryRunner: QueryRunner): Promise<void> {
++        await queryRunner.query(`ALTER TABLE "appointment" DROP COLUMN "schedule_type"`);
++        await queryRunner.query(`ALTER TABLE "appointment" DROP COLUMN "wave_limit"`);
++        await queryRunner.query(`ALTER TABLE "doctor_time_slots" ADD "booked_count" integer NOT NULL DEFAULT '0'`);
++        await queryRunner.query(`ALTER TABLE "doctor" ALTER COLUMN "wave_limit" SET DEFAULT '1'`);
++
++        // ADD IF NOT ALREADY ADDED IN A PREVIOUS MIGRATION
++        await queryRunner.query(`ALTER TABLE "doctor" ADD "schedule_type" VARCHAR NOT NULL DEFAULT 'stream'`);
++    }
++
++    public async down(queryRunner: QueryRunner): Promise<void> {
++        await queryRunner.query(`ALTER TABLE "doctor" DROP COLUMN "schedule_type"`);
++        await queryRunner.query(`ALTER TABLE "doctor" ALTER COLUMN "wave_limit" SET DEFAULT '0'`);
++        await queryRunner.query(`ALTER TABLE "doctor_time_slots" DROP COLUMN "booked_count"`);
++        await queryRunner.query(`ALTER TABLE "appointment" ADD "wave_limit" integer NOT NULL DEFAULT '1'`);
++        await queryRunner.query(`ALTER TABLE "appointment" ADD "schedule_type" character varying NOT NULL DEFAULT 'stream'`);
++    }
++}
+-- 
+2.39.5 (Apple Git-154)
+
