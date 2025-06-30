@@ -11,6 +11,7 @@ import { DoctorAvailability } from './entities/doctor_availability.entity';
 
 import { AuthModule } from './auth/auth.module';
 import { DoctorModule } from './doctor/doctor.module';
+import { AppointmentModule } from './appointment/appointment.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { DoctorModule } from './doctor/doctor.module';
     }),
     AuthModule,
     DoctorModule,
+    AppointmentModule,
   ],
 })
 export class AppModule {}

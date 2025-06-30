@@ -51,6 +51,14 @@ export class Doctor {
   @Column({ default: 'doctor' })
   role: 'doctor';
 
+  // 🔸 NEW: Schedule type
+  @Column({ type: 'enum', enum: ['stream', 'wave'], default: 'stream' })
+  schedule_type: 'stream' | 'wave';
+
+  // 🔸 NEW: Wave booking limit
+  @Column({ type: 'int', default: 1 })
+  wave_limit: number;
+
   @OneToMany(() => TimeSlot, (slot) => slot.doctor)
   timeSlots: TimeSlot[];
 
@@ -62,6 +70,5 @@ export class Doctor {
   user: User;
 
   @OneToMany(() => DoctorAvailability, (availability) => availability.doctor)
-availabilities: DoctorAvailability[];
-
+  availabilities: DoctorAvailability[];
 }

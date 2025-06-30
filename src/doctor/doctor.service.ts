@@ -163,5 +163,20 @@ private generateTimeSlots(availability: DoctorAvailability, interval: number): T
   return slots;
 }
 
+async updateScheduleType(doctorId: number, schedule_type: 'stream' | 'wave') {
+  const doctor = await this.doctorRepository.findOne({ where: { doctor_id: doctorId } });
+
+  if (!doctor) {
+    throw new NotFoundException('Doctor not found');
+  }
+
+  doctor.schedule_type = schedule_type;
+  await this.doctorRepository.save(doctor);
+
+  return { message: `Schedule type updated to ${schedule_type}` };
+}
+
+
+
 
 }

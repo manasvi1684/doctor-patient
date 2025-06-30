@@ -27,7 +27,7 @@ export class TimeSlot {
   @JoinColumn({ name: 'availability_id' })
   availability: DoctorAvailability;
 
-  @Column({ type: 'date' }) // ✅ REQUIRED
+  @Column({ type: 'date' })
   date: Date;
 
   @Column()
@@ -41,6 +41,10 @@ export class TimeSlot {
 
   @Column({ default: true })
   is_available: boolean;
+
+  // 🔸 NEW: Keep track of how many patients booked this slot
+  @Column({ type: 'int', default: 0 })
+  booked_count: number;
 
   @CreateDateColumn()
   created_at: Date;

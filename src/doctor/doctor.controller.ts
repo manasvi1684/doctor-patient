@@ -9,6 +9,7 @@ import {
   Req,
   UseGuards,
   ParseIntPipe,
+  Patch,
 } from '@nestjs/common';
 import { DoctorService } from './doctor.service';
 import { SetAvailabilityDto } from 'src/auth/dto/SetAvailabilityDto';
@@ -16,6 +17,7 @@ import { PaginationDto } from 'src/auth/dto/PaginationDto';
 import { JwtGuard } from 'src/common/guards/jwt.guard';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
+import { UpdateScheduleTypeDto } from 'src/auth/dto/update-schedule-type.dto';
 
 @Controller('api/v1/doctors')
 export class DoctorController {
@@ -71,4 +73,15 @@ async setAvailability(
   ) {
     return this.doctorService.getDoctorAvailability(doctorId, pagination);
   }
+
+@Patch(':id/schedule-type')
+@Roles('doctor')
+@UseGuards(JwtGuard, RolesGuard)
+async updateScheduleType(
+  @Param('id', ParseIntPipe) doctorId: number,
+  @Body() dto: UpdateScheduleTypeDto,
+) {
+  return this.doctorService.updateScheduleType(doctorId, dto.schedule_type);
+}
+
 }
