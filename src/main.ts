@@ -1,15 +1,24 @@
+// src/main.ts
+
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // --- START OF CRITICAL DEBUGGING CODE ---
+  console.log('--- CRITICAL DEBUG INFO ---');
+  console.log(`[DEBUG] DATABASE_URL from process.env: ${process.env.DATABASE_URL}`);
+  console.log(`[DEBUG] PORT from process.env: ${process.env.PORT}`);
+  console.log('--- END OF CRITICAL DEBUG INFO ---');
+  // --- END OF CRITICAL DEBUGGING CODE ---
 
-  // ✅ Enable CORS for frontend access (adjust origin as needed)
+  const app = await NestFactory.create(AppModule); // Uses the correct import names
+
   app.enableCors({
-    origin: true, // or specify e.g., ['https://your-frontend-url.com']
+    origin: true,
     credentials: true,
   });
 
-  await app.listen(process.env.PORT ?? 4002);
+  // The original listen command is correct
+  await app.listen(process.env.PORT ?? 4002); 
 }
 bootstrap();
