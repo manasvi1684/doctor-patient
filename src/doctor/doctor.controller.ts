@@ -83,5 +83,11 @@ async updateScheduleType(
 ) {
   return this.doctorService.updateScheduleType(doctorId, dto.schedule_type);
 }
+// PASTE THIS METHOD AT THE END OF THE DoctorController CLASS
 
+@Get('debug/db-check')
+async debugDbCheck() {
+  console.log('--- TRIGGERING DB CHECK ENDPOINT ---');
+  return this.doctorService.performDbCheck();
+}
 }

@@ -176,7 +176,35 @@ async updateScheduleType(doctorId: number, schedule_type: 'stream' | 'wave') {
   return { message: `Schedule type updated to ${schedule_type}` };
 }
 
+// PASTE THIS METHOD AT THE END OF THE DoctorService CLASS
 
+public async performDbCheck() {
+  try {
+    // Use the existing doctorRepository to run a raw query
+    const result = await this.doctorRepository.query('SELECT current_database();');
+    const dbName = result?.[0]?.current_database || 'N/A';
+    
+    console.log(`--- DB CHECK SUCCESS ---`);
+    console.log(`Connected to database: ${dbName}`);
+    
+    return {
+      message: 'Database check successful',
+      database_name: dbName,
+      env_url_from_app: process.env.DATABASE_URL,
+    };
+  } catch (error) {
+    console.error(`--- DB CHECK FAILED ---`);
+    console.error(error);
+    
+    // This will send a detailed error back to Postman
+    return { 
+      message: 'Database check FAILED', 
+      error: error.message,
+      query: error.query, // This is very helpful if the query itself fails
+      env_url_from_app: process.env.DATABASE_URL
+    };
+  }
+}
 
 
 }
