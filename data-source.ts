@@ -1,24 +1,23 @@
+// data-source.ts
 import 'reflect-metadata';
-import { DataSource } from 'typeorm';
-import { User } from './src/entities/user.entity'; 
-import { Doctor } from './src/entities/doctor.entity';
-import { Patient } from './src/entities/patient.entity';
-import { Appointment } from './src/entities/appointment.entity';
-import { TimeSlot } from './src/entities/timeslot.entity';
+import { DataSource, DataSourceOptions } from 'typeorm';
 import * as dotenv from 'dotenv';
-import { DoctorAvailability } from 'src/entities/doctor_availability.entity';
 
 dotenv.config();
 
-export const AppDataSource = new DataSource({
+export const dataSourceOptions: DataSourceOptions = {
   type: 'postgres',
-  host: process.env.DB_HOST,
-  port: Number(process.env.DB_PORT),
-  username: process.env.DB_USERNAME,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  synchronize: false,
-  logging: true,
-  entities: [Doctor, Patient, Appointment, TimeSlot,User,DoctorAvailability],
-  migrations: ['src/migrations/*.ts'],
-});
+  // This is the single source of truth now
+  url: process.env.DATABASE_URL,
+  ssl: {
+    // This is required for Render's managed databases
+    rejectUnauthorized: false,
+  },
+  entities: ['dist/**/*.entity.js'], // Point to compiled JS files in 'dist'
+  migrations: ['dist/migrations/*.js'], // Point to compiled JS migrations
+  synchronize: false, // Never true in production
+  logging: true, // Good for debugging
+};
+
+const AppDataSource = new DataSource(dataSourceOptions);
+export default AppDataSource;
